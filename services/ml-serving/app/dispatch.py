@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from typing import Optional, List, Dict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 
 from .schemas import DispatchRequest, CallRequest, DriverInfo
@@ -117,8 +117,8 @@ class SmartDispatchAlgorithm:
     # ----- 서브 로직 --------------------------------------------------------
     def calculate_urgency_score(self, request: Dict) -> float:
         urgency = 0.0
-        current_time = datetime.now()
-        wait_minutes = (current_time - request['request_time']).total_seconds() / 60
+        current_time = datetime.now(timezone.utc)
+        wait_minutes = (datetime.now(timezone.utc) - request['request_time']).total_seconds() / 60
         urgency += math.exp(wait_minutes / 15) * 10
 
         if request.get('wheelchair'):
@@ -417,6 +417,7 @@ async def smart_dispatch(dispatch_request: DispatchRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print("❌ 예외 발생:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
