@@ -15,7 +15,7 @@ def _model_dir() -> Path:
     모델 파일들이 저장된 디렉토리 반환
     현재 파일 기준으로 app/model 경로를 찾아감
     """
-    return Path(__file__).resolve().parent / "model"
+    return Path(__file__).resolve().parents[1] / "app" / "model"
 
 
 def load_model_assets() -> Tuple[Any, Any, Any]:

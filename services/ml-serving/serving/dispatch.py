@@ -59,7 +59,26 @@ class DriverProfile:
     completed_rides: int = 0
     specialty_areas: List[str] = None
 
+def calculate_dispatch_score(
+    order_rank: int,
+    waiting_time: int,
+    pickup_distance: float,
+    is_wheelchair: bool,
+    max_order: int,
+    max_waiting: int,
+    max_distance: float
+) -> float:
+    order_score = 100 * (1 - order_rank / max_order)
+    wait_score = 100 * min(waiting_time / max_waiting, 1.0)
+    dist_score = 100 * (1 - pickup_distance / max_distance)
+    wheelchair_bonus = 10 if is_wheelchair else 0
 
+    final_score = (
+        order_score * 0.20 +
+        wait_score * 0.30 +
+        dist_score * 0.40 +
+        wheelchair_bonus
+    )
 # ---------------------------------------------------------------------------
 # 스마트 배차 알고리즘 구현
 # ---------------------------------------------------------------------------
@@ -218,7 +237,7 @@ class SmartDispatchAlgorithm:
         dlon = math.radians(to_data['lon'] - from_data['lon'])
         a = (math.sin(dlat/2)**2 +
              math.cos(math.radians(from_data['lat'])) * math.cos(math.radians(to_data['lat'])) *
-             math.sin(dlon/2)**2)
+            math.sin(dlon/2)**2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
         distance = R * c
 
