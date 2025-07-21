@@ -11,7 +11,7 @@ from .utils import load_model_assets, predict_waiting_time_from_request
 
 
 # ---------------------------------------------------------------------------
-# 기초 데이터 (실 환경에서는 DB/외부 서비스 연동)
+# 기초 데이터 (지역 및 날씨 영향도, 실환경에서는 DB 또는 API 활용)
 # ---------------------------------------------------------------------------
 
 LOCATION_DATA = {
@@ -36,7 +36,7 @@ WEATHER_IMPACT = {
 
 
 # ---------------------------------------------------------------------------
-# 프로필 데이터 구조 (실제 서비스에서는 DB 연동)
+# 사용자/운전자 프로필 구조 정의 (데이터베이스 연동 대체용)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -61,22 +61,23 @@ class DriverProfile:
 
 
 # ---------------------------------------------------------------------------
-# Smart Dispatch Algorithm
+# 스마트 배차 알고리즘 구현
 # ---------------------------------------------------------------------------
 
 class SmartDispatchAlgorithm:
     def __init__(self):
-        self.active_requests: Dict[str, Dict] = {}
-        self.driver_pool: Dict[str, Dict] = {}
-        self.historical_patterns: Dict = {}
-        self.real_time_traffic: Dict = {}
-        # ML 예측 모델 로드 (대기시간 보조 신호)
+        self.active_requests: Dict[str, Dict] = {}  # 현재 접수된 요청 목록
+        self.driver_pool: Dict[str, Dict] = {}      # 운전자 목록
+        self.historical_patterns: Dict = {}         # 과거 패턴 저장소
+        self.real_time_traffic: Dict = {}           # 실시간 교통 정보
+        # 머신러닝 모델 및 라벨 인코더 로드
         self.wait_model, self.le_loc, self.le_weather = load_model_assets()
 
-    # ----- 메인 진입점 ------------------------------------------------------
     def dynamic_dispatch(self, request: Dict, available_drivers: List[Dict]) -> Dict:
+        """
+        호출 요청과 가용 운전자를 기반으로 최적 배차 결과 반환
+        """
         urgency = self.calculate_urgency_score(request)
-
         system_load = len(self.active_requests) / max(len(available_drivers), 1)
         urgency_threshold = 50 if system_load > 3 else 30
 
@@ -91,11 +92,7 @@ class SmartDispatchAlgorithm:
             efficiency = self.calculate_efficiency_score(driver, request)
             fairness = self.calculate_fairness_score(driver, request)
 
-            total_score = (
-                urgency * 0.4 +
-                efficiency * 0.4 +
-                fairness * 0.2
-            )
+            total_score = urgency * 0.4 + efficiency * 0.4 + fairness * 0.2
 
             dispatch_scores.append({
                 'driver': driver,
@@ -114,7 +111,6 @@ class SmartDispatchAlgorithm:
         self.learn_from_dispatch(request, best_match)
         return self.create_dispatch_result(request, best_match)
 
-    # ----- 서브 로직 --------------------------------------------------------
     def calculate_urgency_score(self, request: Dict) -> float:
         urgency = 0.0
         current_time = datetime.now(timezone.utc)
@@ -127,30 +123,22 @@ class SmartDispatchAlgorithm:
                 urgency += 50
 
         destination_type = request.get('destination_type', 'general')
-        urgency_multipliers = {
-            'hospital': 2.0,
-            'pharmacy': 1.8,
-            'government': 1.5,
-            'education': 1.3,
-            'general': 1.0
-        }
-        urgency *= urgency_multipliers.get(destination_type, 1.0)
+        urgency *= {
+            'hospital': 2.0, 'pharmacy': 1.8, 'government': 1.5,
+            'education': 1.3, 'general': 1.0
+        }.get(destination_type, 1.0)
 
-        weather = request.get('weather', '맑음')
-        if weather in ['비', '눈'] and request.get('wheelchair'):
+        if request.get('weather') in ['비', '눈'] and request.get('wheelchair'):
             urgency *= 1.5
 
-        hour = current_time.hour
-        if destination_type == 'hospital' and hour >= 16:
+        if destination_type == 'hospital' and current_time.hour >= 16:
             urgency *= 1.5
 
         user_profile = self.get_user_profile(request.get('user_id'))
         if user_profile and user_profile.reliability_score < 0.8:
             urgency *= 0.8
 
-        # ML 예측된 대기시간이 길면 추가 가중
-        ml_wait = self.predict_waiting_time(request)
-        if ml_wait >= 25:
+        if self.predict_waiting_time(request) >= 25:
             urgency *= 1.1
 
         return urgency
@@ -166,8 +154,7 @@ class SmartDispatchAlgorithm:
         efficiency -= travel_time * 2
 
         next_possible_rides = self.find_nearby_future_requests(
-            request['destination'],
-            estimated_arrival_time=travel_time + 20
+            request['destination'], estimated_arrival_time=travel_time + 20
         )
         if next_possible_rides:
             efficiency += len(next_possible_rides) * 10
@@ -175,37 +162,29 @@ class SmartDispatchAlgorithm:
         match_score = self.calculate_driver_user_match(driver, request)
         efficiency += match_score * 20
 
-        destination_density = LOCATION_DATA[request['destination']].get('density', 'medium')
         density_bonus = {'high': 15, 'medium': 5, 'low': 0}
+        destination_density = LOCATION_DATA[request['destination']]['density']
         efficiency += density_bonus.get(destination_density, 0)
 
-        driver_fatigue = self.calculate_driver_fatigue(driver['driver_id'])
-        if driver_fatigue > 0.7:
+        fatigue = self.calculate_driver_fatigue(driver['driver_id'])
+        if fatigue > 0.7:
             efficiency *= 0.7
 
         return efficiency
 
     def calculate_fairness_score(self, driver: Dict, request: Dict) -> float:
         fairness = 50.0
-
         user_profile = self.get_user_profile(request.get('user_id'))
-        if user_profile:
-            if user_profile.avg_waiting_time > 25:
-                fairness += 20
+        if user_profile and user_profile.avg_waiting_time > 25:
+            fairness += 20
 
-        location = request['pickup_location']
-        location_service_rate = self.get_location_service_stats(location)
-        if location_service_rate < 0.8:
+        if self.get_location_service_stats(request['pickup_location']) < 0.8:
             fairness += 15
 
-        driver_today_rides = self.get_driver_daily_rides(driver['driver_id'])
-        avg_rides = self.get_average_daily_rides()
-        if driver_today_rides < avg_rides * 0.8:
+        if self.get_driver_daily_rides(driver['driver_id']) < self.get_average_daily_rides() * 0.8:
             fairness += 10
 
-        # ML 예측 대기시간 길면 공정성 가점
-        ml_wait = self.predict_waiting_time(request)
-        if ml_wait >= 25:
+        if self.predict_waiting_time(request) >= 25:
             fairness += 10
 
         return fairness
@@ -220,9 +199,7 @@ class SmartDispatchAlgorithm:
 
         for driver in suitable_drivers:
             driver['eta'] = self.estimate_real_travel_time(
-                driver['current_location'],
-                request['pickup_location'],
-                request.get('weather', '맑음')
+                driver['current_location'], request['pickup_location'], request.get('weather', '맑음')
             )
 
         fastest_driver = min(suitable_drivers, key=lambda x: x['eta'])
@@ -236,14 +213,11 @@ class SmartDispatchAlgorithm:
         from_data = LOCATION_DATA[from_loc]
         to_data = LOCATION_DATA[to_loc]
 
-        lat1, lon1 = from_data['lat'], from_data['lon']
-        lat2, lon2 = to_data['lat'], to_data['lon']
-
         R = 6371
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
+        dlat = math.radians(to_data['lat'] - from_data['lat'])
+        dlon = math.radians(to_data['lon'] - from_data['lon'])
         a = (math.sin(dlat/2)**2 +
-             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.cos(math.radians(from_data['lat'])) * math.cos(math.radians(to_data['lat'])) *
              math.sin(dlon/2)**2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
         distance = R * c
@@ -257,44 +231,38 @@ class SmartDispatchAlgorithm:
         elif hour in [0, 1, 2, 3, 4, 5]:
             base_speed *= 1.3
 
-        weather_impact = WEATHER_IMPACT.get(weather, {}).get('difficulty', 1.0)
-        base_speed /= weather_impact
-
+        base_speed /= WEATHER_IMPACT.get(weather, {}).get('difficulty', 1.0)
         travel_time = (distance / base_speed) * 60
-        traffic_factor = self.real_time_traffic.get((from_loc, to_loc), 1.0)
-        travel_time *= traffic_factor
+        travel_time *= self.real_time_traffic.get((from_loc, to_loc), 1.0)
+
         return travel_time
 
     def calculate_driver_user_match(self, driver: Dict, request: Dict) -> float:
         match_score = 0.0
 
         if request.get('wheelchair') and driver.get('wheelchair_capable'):
-            driver_profile = self.get_driver_profile(driver['driver_id'])
-            if driver_profile and driver_profile.specialty_areas and \
-               'wheelchair_expert' in driver_profile.specialty_areas:
+            profile = self.get_driver_profile(driver['driver_id'])
+            if profile and profile.specialty_areas and 'wheelchair_expert' in profile.specialty_areas:
                 match_score += 2.0
 
         if request['pickup_location'] in driver.get('specialty_areas', []):
             match_score += 1.5
 
-        driver_profile = self.get_driver_profile(driver['driver_id'])
-        if driver_profile:
-            match_score += driver_profile.service_score
+        profile = self.get_driver_profile(driver['driver_id'])
+        if profile:
+            match_score += profile.service_score
 
         return match_score
 
     def find_nearby_future_requests(self, location: str, estimated_arrival_time: float) -> List[Dict]:
-        future_requests = []
-        for req in self.active_requests.values():
-            if req['pickup_location'] == location:
-                wait_time = (datetime.now() - req['request_time']).total_seconds() / 60
-                if wait_time < estimated_arrival_time + 30:
-                    future_requests.append(req)
-        return future_requests
+        return [
+            req for req in self.active_requests.values()
+            if req['pickup_location'] == location and
+            (datetime.now() - req['request_time']).total_seconds() / 60 < estimated_arrival_time + 30
+        ]
 
     def learn_from_dispatch(self, request: Dict, dispatch_result: Dict):
-        # 후처리/통계 적재 지점
-        pass
+        pass  # 추후 통계 저장 등 처리
 
     def calculate_driver_fatigue(self, driver_id: str) -> float:
         return 0.5
@@ -315,19 +283,12 @@ class SmartDispatchAlgorithm:
         return 12.0
 
     def predict_waiting_time(self, request: Dict) -> float:
-        """
-        SmartDispatchAlgorithm 내부에서 ML 모델을 호출해
-        해당 요청의 예상 대기시간(분)을 얻어온다.
-        """
         return predict_waiting_time_from_request(
-            self.wait_model,
-            self.le_loc,
-            self.le_weather,
+            self.wait_model, self.le_loc, self.le_weather,
             {
                 "pickup_location": request.get("pickup_location"),
                 "weather": request.get("weather", "맑음"),
                 "wheelchair": request.get("wheelchair", False),
-                # 아래 2개는 실제 데이터 소스 연동 가능
                 "num_vehicles": request.get("num_vehicles", 10),
                 "num_users": request.get("num_users", 20),
             },
@@ -337,9 +298,7 @@ class SmartDispatchAlgorithm:
     def create_dispatch_result(self, request: Dict, match: Dict) -> Dict:
         driver = match['driver']
         travel_time = self.estimate_real_travel_time(
-            driver['current_location'],
-            request['pickup_location'],
-            request.get('weather', '맑음')
+            driver['current_location'], request['pickup_location'], request.get('weather', '맑음')
         )
         return {
             "driver_id": driver['driver_id'],
@@ -364,12 +323,7 @@ class SmartDispatchAlgorithm:
             return f"휠체어 전용 차량이 약 {int(eta)}분 내 도착 예정입니다."
         return f"차량이 약 {int(eta)}분 내 도착 예정입니다."
 
-    # ----- 전역 최적화 (단순 더미 구현) --------------------------------------
     def global_optimization(self, all_requests: List[Dict], all_drivers: List[str]):
-        """
-        간단한 라운드로빈/우선순위 기반 더미 전역 최적화.
-        실제 서비스에서는 Hungarian, MILP, RL 등을 사용 가능.
-        """
         assignments = []
         for i, req in enumerate(all_requests):
             driver_id = all_drivers[i % len(all_drivers)] if all_drivers else None
@@ -378,11 +332,10 @@ class SmartDispatchAlgorithm:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI Router
+# FastAPI Router 정의 및 엔드포인트 연결
 # ---------------------------------------------------------------------------
 
 router = APIRouter()
-
 dispatch_algorithm = SmartDispatchAlgorithm()
 
 
@@ -405,7 +358,6 @@ async def smart_dispatch(dispatch_request: DispatchRequest):
             'driver_id': d.driver_id,
             'current_location': d.current_location,
             'wheelchair_capable': d.wheelchair_capable,
-            # specialty_areas 등 확장 가능
         }
         for d in dispatch_request.available_drivers
         if d.status == "available"
@@ -467,6 +419,5 @@ async def get_system_status():
 
 @router.post("/update_profile/")
 async def update_user_profile(user_id: str, profile_data: Dict):
-    # TODO: DB 업데이트
+    # TODO: DB 연동하여 사용자 프로필 갱신
     return {"status": "updated", "user_id": user_id}
-
