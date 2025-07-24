@@ -4,6 +4,10 @@ import joblib
 import pandas as pd
 from pathlib import Path
 from typing import Tuple, Dict, Any
+from datetime import datetime
+
+# 📌 추가: XLSX 오픈 API 호출용 함수 임포트
+from .api import fetch_daily_usage_data
 
 
 # ------------------------------------------------------------------------------
@@ -31,6 +35,28 @@ def load_model_assets() -> Tuple[Any, Any, Any]:
     le_loc = joblib.load(mdir / "le_loc.pkl")
     le_weather = joblib.load(mdir / "le_weather.pkl")
     return model, le_loc, le_weather
+
+
+# ------------------------------------------------------------------------------
+# ✅ 오픈 API 기반 운행/수요 추정 함수
+# ------------------------------------------------------------------------------
+
+def estimate_usage_stats(location: str, date: str = None) -> Tuple[int, int]:
+    """
+    서울시 오픈 API 데이터를 통해 해당 위치의 운행 차량수 및 콜 수 추정
+    """
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+
+    try:
+        df = fetch_daily_usage_data(date)
+        filtered = df[df["출발지"].astype(str).str.contains(location)]
+        vehicle_count = int(filtered["운행건수"].sum())
+        user_count = int(filtered["콜수"].sum())
+        return vehicle_count, user_count
+    except Exception as e:
+        print("❌ estimate_usage_stats 오류:", str(e))
+        return 10, 20  # 기본 fallback
 
 
 # ------------------------------------------------------------------------------
@@ -67,11 +93,8 @@ def predict_waiting_time_from_request(
 ) -> float:
     """
     입력된 요청(request_dict)을 기반으로 예측 대기시간(분)을 반환
-    - 모델에 맞는 포맷으로 변환 후 예측 수행
-    - 위치, 날씨 인코딩이 실패할 경우 예외 처리 후 999 반환
+    - 오픈 API에서 지역별 수요/공급 데이터를 자동으로 추정해 반영
     """
-    from datetime import datetime
-
     # 시간대 추출 (기본값은 현재 시각)
     hour = request_dict.get("hour")
     if hour is None:
@@ -81,10 +104,18 @@ def predict_waiting_time_from_request(
     loc = request_dict.get("pickup_location")
     weather = request_dict.get("weather", "맑음")
     wheelchair_yn = 1 if request_dict.get("wheelchair", False) else 0
-    num_vehicles = request_dict.get("num_vehicles", default_vehicle_count)
-    num_users = request_dict.get("num_users", default_user_count)
 
-    # 인코딩 처리 (에러 발생 시 fallback 값 반환)
+    # 오픈 API로 지역 기반 통계 추정
+    try:
+        est_vehicles, est_users = estimate_usage_stats(loc)
+    except:
+        est_vehicles, est_users = default_vehicle_count, default_user_count
+
+    # 외부 주입값이 있으면 우선 적용
+    num_vehicles = request_dict.get("num_vehicles", est_vehicles)
+    num_users = request_dict.get("num_users", est_users)
+
+    # 인코딩 처리
     try:
         loc_encoded = int(le_loc.transform([loc])[0])
         weather_encoded = int(le_weather.transform([weather])[0])
@@ -113,23 +144,19 @@ def extract_features(request) -> list:
     DispatchRequest 객체 기반으로 ML 예측에 필요한 피처 리스트 추출
     - 추출된 리스트는 [시간대, 위치코드, 날씨코드, 휠체어YN, 차량수, 이용자수] 순
     """
-    from datetime import datetime
-    print("🧪 extract_features 호출됨")  # 디버깅 로그
+    print("🧪 extract_features 호출됨")
 
-    # 시간대 파싱 (예외 발생 시 현재 시간 사용)
     try:
         hour = request.request_time.hour
     except:
         hour = datetime.now().hour
 
-    # 기타 피처 추출
     loc = request.call_request.pickup_location
     weather = request.weather
     wheelchair_yn = 1 if request.call_request.wheelchair else 0
     num_vehicles = len(request.available_drivers)
-    num_users = 20  # 실제 구현에서는 외부 데이터와 연동 가능
+    num_users = 20  # 또는 오픈 API 연동 가능
 
-    # 인코딩 처리
     try:
         loc_encoded = int(request.le_loc.transform([loc])[0])
         weather_encoded = int(request.le_weather.transform([weather])[0])

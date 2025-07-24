@@ -1,51 +1,112 @@
-# FastAPI 웹 프레임워크 및 예외 처리 모듈 임포트
 from fastapi import FastAPI, HTTPException
+import requests
+import pandas as pd
+from io import BytesIO
 
-# dispatch.py에 정의된 라우터 객체 가져오기 (스마트 배차 관련 API 포함)
-from .dispatch import router as dispatch_router
-
-# 머신러닝 모델 자산 로드 함수 (예: 대기시간 예측 모델)
-from .utils import load_model_assets
-
-# 예측 입력 스키마 (필요시 예측 API 등에서 사용)
-from .schemas import InputData
-
-# 예측 입력용 DataFrame 구성 함수 (확장 가능)
-from .utils import build_predict_dataframe
-
-
-# ✅ FastAPI 애플리케이션 객체 생성
-# ASGI 서버에서 실행될 주 앱 정의
+# ✅ FastAPI 앱 인스턴스
 app = FastAPI(
-    title="스마트 장애인 콜택시 시스템",         # API 문서 제목
-    description="대기시간 예측 + 스마트 배차 API",  # 문서 설명
-    version="2.0",                            # 버전 정보
+    title="스마트 장애인 콜택시 시스템",
+    description="서울시 장애인 콜택시 실시간 이용현황 + 예측/배차 API",
+    version="2.0",
 )
 
-
-# ✅ dispatch.py의 라우터 등록 (API 라우팅 구성)
-# /smart_dispatch, /batch_optimize 등 등록
-app.include_router(dispatch_router)
-
-
-# ✅ 서버 시작 시 모델 등 자산 미리 로딩
-# 대기시간 예측 등에 사용되는 ML 모델 및 인코더
-model, le_loc, le_weather = load_model_assets()
-
-
-# ✅ 루트 경로 "/" 접속 시 간단한 안내 메시지 제공
+# ✅ 루트 엔드포인트
 @app.get("/")
 def root():
-    """
-    기본 루트 확인용 엔드포인트.
-    서버가 정상 실행 중인지 확인할 수 있음.
-    """
     return {
-        "message": "🚕 스마트 장애인 콜택시 API 서버 동작 중입니다.",
+        "message": "🚕 스마트 장애인 콜택시 API 서버 작동 중입니다.",
         "endpoints": [
-            "/smart_dispatch/",       # 스마트 배차 요청
-            "/batch_optimize/",       # 다중 요청 최적화
-            "/system_status/",        # 시스템 상태 조회
-            "/update_profile/",       # 사용자 프로필 갱신
+            "/usage?date=YYYYMMDD",
+            "/best_destinations?sDate=YYYYMMDD"
         ]
     }
+
+# ✅ 일별 이용현황 API
+@app.get("/usage")
+def get_daily_usage(date: str = "20250131"):
+    try:
+        df = fetch_daily_usage_data(date)
+
+        summary = {
+            "date": date,
+            "total_requests": int(df["접수건"].sum()),
+            "total_rides": int(df["탑승건"].sum()),
+            "total_vehicles": int(df["차량운행"].sum()),
+            "avg_waiting_time": round(df["평균대기시간"].mean(), 2),
+            "avg_fare": round(df["평균요금"].mean(), 2),
+            "avg_distance": round(df["평균승차거리"].mean(), 2)
+        }
+
+        top_locations = (
+            df.groupby("출발지")[["탑승건"]]
+            .sum()
+            .sort_values(by="탑승건", ascending=False)
+            .head(5)
+            .reset_index()
+            .rename(columns={"출발지": "location", "탑승건": "ride_count"})
+            .to_dict(orient="records")
+        )
+
+        return {
+            "summary": summary,
+            "top_locations": top_locations
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ 베스트 목적지 API
+@app.get("/best_destinations")
+def get_best_destinations(sDate: str = "20250101"):
+    try:
+        df = fetch_best_100_destinations(sDate)
+        top_places = df[["장소명", "이용건수"]].sort_values(by="이용건수", ascending=False).head(10)
+        return {
+            "start_date": sDate,
+            "top_destinations": top_places.to_dict(orient="records")
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ 일별 이용현황 엑셀 파서
+def fetch_daily_usage_data(date: str = "20250131") -> pd.DataFrame:
+    url = f"http://m.calltaxi.sisul.or.kr/api/open/newEXCEL0001.asp?key=d197a032e00d4dfd139e4f6e2c7dc2df&eDate={date}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="일별 이용현황 데이터를 가져오는 데 실패했습니다.")
+
+    try:
+        df = pd.read_excel(BytesIO(response.content))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"엑셀 파싱 실패: {str(e)}")
+
+    required_cols = ["출발지", "차량운행", "접수건", "탑승건", "평균대기시간", "평균요금", "평균승차거리"]
+    for col in required_cols:
+        if col not in df.columns:
+            raise HTTPException(status_code=500, detail=f"필수 컬럼 누락: {col}")
+
+    return df
+
+
+# ✅ 베스트 목적지 엑셀 파서
+def fetch_best_100_destinations(start_date: str = "20250101") -> pd.DataFrame:
+    url = f"http://m.calltaxi.sisul.or.kr/api/open/newEXCEL0002.asp?key=fd055bf8b90d1b192bd870f910f0fddf&sDate={start_date}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="베스트 목적지 데이터를 가져오는 데 실패했습니다.")
+
+    try:
+        df = pd.read_excel(BytesIO(response.content))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"엑셀 파싱 실패: {str(e)}")
+
+    if "장소명" not in df.columns or "이용건수" not in df.columns:
+        raise HTTPException(status_code=500, detail="컬럼 누락: 장소명 또는 이용건수")
+
+    return df
