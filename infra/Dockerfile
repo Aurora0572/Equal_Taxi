@@ -11,7 +11,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY requirements.txt ./
+COPY services/ml-serving/requirements.txt ./
 
 # Install Python packages
 RUN pip install --no-cache-dir --upgrade pip && \

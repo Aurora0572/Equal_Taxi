@@ -5,10 +5,11 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple, Dict, Any
 from datetime import datetime
+from httpx import AsyncClient
+import logging
 
 # 📌 추가: XLSX 오픈 API 호출용 함수 임포트
 from .api import fetch_daily_usage_data
-import httpx
 from .constants import TMAP_API_KEY, TMAP_BASE_URL
 
 
@@ -210,3 +211,32 @@ async def get_public_transit_alternatives(
     except Exception as e:
         logger.error(f"TMap API 호출 실패: {e}")
         return None
+
+
+async def fetch_daily_usage_data(date: str) -> pd.DataFrame:
+    """콜택시 일일 사용 데이터를 가져옵니다."""
+    url = f"http://m.calltaxi.sisul.or.kr/api/open/newEXCEL0001.asp"
+    params = {
+        "key": os.getenv("CALLTAXI_USAGE_KEY"),
+        "eDate": date
+    }
+    
+    try:
+        async with AsyncClient() as client:
+            response = await client.get(url, params=params)
+            response.encoding = 'euc-kr'  # 한글 인코딩 설정
+            
+            # HTML 테이블을 DataFrame으로 변환
+            tables = pd.read_html(response.text, encoding='euc-kr')
+            if not tables:
+                raise ValueError("No tables found in response")
+                
+            df = tables[0]  # 첫 번째 테이블 사용
+            return df
+            
+    except Exception as e:
+        logging.error(f"데이터 가져오기 실패: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 가져오기 실패: {str(e)}"
+        )
