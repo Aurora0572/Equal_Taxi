@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Optional
+from typing import Dict, Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -41,9 +41,10 @@ class DispatchRequest(BaseModel):
 
 
 # ===== API 응답 =====
-class Location(BaseModel):
-    location: str
-    ride_count: int
+class LocationStats(BaseModel):
+    rides: int
+    estimated_seconds: Optional[int] = None
+    estimated_minutes: Optional[float] = None
 
 
 class UsageSummary(BaseModel):
@@ -54,14 +55,18 @@ class UsageSummary(BaseModel):
     avg_waiting_time: float
     avg_fare: float
     avg_distance: float
-    top_locations: Dict[str, int]
+    top_locations: Dict[str, LocationStats]
+
 
 class UsageResponse(BaseModel):
     summary: UsageSummary
 
+
 class Destination(BaseModel):
     장소명: str
     이용건수: int
+    estimated_seconds: Optional[int] = None
+    estimated_minutes: Optional[float] = None
 
 
 class DestinationResponse(BaseModel):
