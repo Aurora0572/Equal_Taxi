@@ -8,6 +8,8 @@ from datetime import datetime
 
 # 📌 추가: XLSX 오픈 API 호출용 함수 임포트
 from .api import fetch_daily_usage_data
+import httpx
+from .constants import TMAP_API_KEY, TMAP_BASE_URL
 
 
 # ------------------------------------------------------------------------------
@@ -165,3 +167,46 @@ def extract_features(request) -> list:
         return [hour, -1, -1, wheelchair_yn, num_vehicles, num_users]
 
     return [hour, loc_encoded, weather_encoded, wheelchair_yn, num_vehicles, num_users]
+
+
+async def get_public_transit_alternatives(
+    start_lat: float,
+    start_lng: float,
+    end_lat: float,
+    end_lng: float
+) -> dict:
+    """
+    TMap API를 통해 대중교통 경로 대안을 조회합니다.
+    
+    Args:
+        start_lat: 출발지 위도
+        start_lng: 출발지 경도
+        end_lat: 도착지 위도
+        end_lng: 도착지 경도
+    
+    Returns:
+        dict: 대중교통 경로 정보
+    """
+    url = f"{TMAP_BASE_URL}/routes/transit"
+    
+    headers = {
+        "Accept": "application/json",
+        "appKey": TMAP_API_KEY
+    }
+    
+    params = {
+        "startX": str(start_lng),
+        "startY": str(start_lat),
+        "endX": str(end_lng),
+        "endY": str(end_lat),
+        "format": "json"
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"TMap API 호출 실패: {e}")
+        return None
