@@ -74,7 +74,7 @@ class DestinationResponse(BaseModel):
     top_destinations: List[Destination]
 
 
-# ===== 실시간 mock 데이터 + V2 Usage 응답 =====
+# ===== 실시간 mock 데이터 =====
 class MockRealtimeResponse(BaseModel):
     calls: int = Field(
         ..., example=12, description="현재 콜 요청 수 (건)"
@@ -100,31 +100,24 @@ class MockRealtimeResponse(BaseModel):
         }
 
 
+# ===== V2 Usage 응답 =====
 class UsageV2Response(BaseModel):
-    endpoint: str = Field(
-        ..., example="/v2/usage", description="API 엔드포인트 경로"
+    endpoint: str
+    total_requests: int
+    status: str
+    estimated_minutes: Optional[float] = Field(
+        None,
+        example=12.3,
+        description="평균 배차 예상 시간 (분, Tmap 기반)"
     )
-    total_requests: int = Field(
-        ..., example=1234, description="총 요청 수 (건)"
+    gemini_eta: Optional[float] = Field(
+        None,
+        example=15.5,
+        description="Gemini AI가 통계를 기반으로 예측한 배차 예상 시간 (분)"
     )
-    status: str = Field(
-        ..., example="ok", description="API 상태"
+    gemini_comment: Optional[str] = Field(
+        None,
+        example="교통 혼잡으로 배차 긴급도가 높습니다.",
+        description="Gemini AI가 생성한 한 줄 요약"
     )
-    mock_realtime: MockRealtimeResponse = Field(
-        ..., description="실시간 mock 데이터 (수요/공급 상태)"
-    )
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "endpoint": "/v2/usage",
-                "total_requests": 1234,
-                "status": "ok",
-                "mock_realtime": {
-                    "calls": 12,
-                    "active_cars": 5,
-                    "waiting_users": 3,
-                    "priority_score": 0.74
-                }
-            }
-        }
+    mock_realtime: MockRealtimeResponse
