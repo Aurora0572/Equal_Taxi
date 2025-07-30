@@ -5,6 +5,7 @@ from typing import Optional, List, Dict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
+import asyncio
 
 from .schemas import DispatchRequest, CallRequest, DriverInfo
 from .utils import (
@@ -13,6 +14,7 @@ from .utils import (
     estimate_usage_stats,
 )
 from .api import fetch_daily_usage_data  # 오픈 API 함수 임포트
+from .routers.mock import realtime_mock  # priority_score 연동 추가
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +80,25 @@ class SmartDispatchAlgorithm:
 
         self.wait_model, self.le_loc, self.le_weather = load_model_assets()
 
-    def dynamic_dispatch(self, request: Dict, available_drivers: List[Dict]) -> Dict:
-        # ① 오픈 API를 통한 실시간 수요/공급 데이터 보정
+    async def dynamic_dispatch(self, request: Dict, available_drivers: List[Dict]) -> Dict:
+        """
+        요청 정보를 기반으로 우선순위 점수(priority_score)를 포함한 스마트 배차 수행
+        """
+        # ① mock 데이터를 통해 calls_detail 가져오기 (priority_score 사용)
+        priority_boost = 0.0
+        try:
+            mock_data = await realtime_mock()
+            calls_detail = mock_data.get("calls_detail", [])
+            for call in calls_detail:
+                # ID 또는 user_id를 기준으로 매칭
+                if str(call.get("id")) == str(request.get("request_id")) or \
+                   str(call.get("id")) == str(request.get("user_id")):
+                    priority_boost = call.get("priority_score", 0.0)
+                    break
+        except Exception as e:
+            print(f"priority_score 불러오기 실패: {e}")
+
+        # ② 실시간 수요/공급 데이터 보정
         try:
             vehicles, users = estimate_usage_stats(request.get("pickup_location"))
             request["num_vehicles"] = vehicles
@@ -88,15 +107,19 @@ class SmartDispatchAlgorithm:
             request["num_vehicles"] = 10
             request["num_users"] = 20
 
-        # ② 긴급도 평가 → 배차 흐름 결정
+        # ③ 긴급도 평가
         urgency = self.calculate_urgency_score(request)
+
+        # ④ priority_score 가중치 반영 (2배 효과)
+        urgency *= (1 + 2 * priority_boost)
+
+        # ⑤ 긴급 배차 기준 확인
         system_load = len(self.active_requests) / max(len(available_drivers), 1)
         urgency_threshold = 50 if system_load > 3 else 30
-
         if urgency > urgency_threshold:
             return self.emergency_dispatch(request, available_drivers)
 
-        # ③ 스코어 기반 일반 배차
+        # ⑥ 스코어 기반 일반 배차
         dispatch_scores = []
         for driver in available_drivers:
             if request.get('wheelchair') and not driver.get('wheelchair_capable'):
@@ -355,7 +378,7 @@ async def smart_dispatch(dispatch_request: DispatchRequest):
     ]
 
     try:
-        return dispatch_algorithm.dynamic_dispatch(request_info, drivers)
+        return await dispatch_algorithm.dynamic_dispatch(request_info, drivers)
     except HTTPException:
         raise
     except Exception as e:
@@ -407,7 +430,6 @@ async def get_system_status():
 
 @router.post("/update_profile/")
 async def update_user_profile(user_id: str, profile_data: Dict):
-    # 추후 DB 연동 가능
     return {"status": "updated", "user_id": user_id}
 
 
