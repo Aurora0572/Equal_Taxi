@@ -15,7 +15,7 @@ async def ask_gemini(prompt: str):
     try:
         # 1. ML 모델로 예측 (현재는 고정 입력, 추후 확장 가능)
         request_dict = {
-            "pickup_location": "서울역",
+            "pickup_location": "강남",
             "weather": "맑음",
             "wheelchair": False,
         }
