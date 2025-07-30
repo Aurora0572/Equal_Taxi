@@ -4,23 +4,23 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-# ===== 예측 입력 =====
+# ===== 예측 입력 (ML 모델 입력 데이터) =====
 class InputData(BaseModel):
-    시간대: int = Field(..., ge=0, le=23, description="시간(0~23시)")
+    시간대: int = Field(..., ge=0, le=23, description="시간 (0~23시)")
     위치: str
     날씨: str
-    휠체어YN: int = Field(..., ge=0, le=1)
-    해당지역운행차량수: int = Field(..., ge=0)
-    해당지역이용자수: int = Field(..., ge=0)
+    휠체어YN: int = Field(..., ge=0, le=1, description="휠체어 탑승 여부 (0 또는 1)")
+    해당지역운행차량수: int = Field(..., ge=0, description="해당 지역 운행 차량 수 (대)")
+    해당지역이용자수: int = Field(..., ge=0, description="해당 지역 이용자 수 (명)")
 
 
-# ===== 배차 요청 =====
+# ===== 배차 요청 관련 데이터 모델 =====
 class CallRequest(BaseModel):
     user_id: str
     pickup_location: str
     destination: str
     wheelchair: bool = False
-    destination_type: str = "general"
+    destination_type: str = "general"  # general / hospital 등
     medical_appointment: bool = False
     special_requirements: Optional[List[str]] = None
 
@@ -29,7 +29,7 @@ class DriverInfo(BaseModel):
     driver_id: str
     current_location: str
     wheelchair_capable: bool = False
-    status: str = "available"
+    status: str = "available"  # available / busy 등
 
 
 class DispatchRequest(BaseModel):
@@ -40,7 +40,7 @@ class DispatchRequest(BaseModel):
     weather: str = "맑음"
 
 
-# ===== API 응답 =====
+# ===== 통계/사용량 관련 모델 =====
 class LocationStats(BaseModel):
     rides: int
     estimated_seconds: Optional[int] = None
@@ -72,3 +72,59 @@ class Destination(BaseModel):
 class DestinationResponse(BaseModel):
     start_date: str
     top_destinations: List[Destination]
+
+
+# ===== 실시간 mock 데이터 + V2 Usage 응답 =====
+class MockRealtimeResponse(BaseModel):
+    calls: int = Field(
+        ..., example=12, description="현재 콜 요청 수 (건)"
+    )
+    active_cars: int = Field(
+        ..., example=5, description="현재 운행 중인 차량 수 (대)"
+    )
+    waiting_users: Optional[int] = Field(
+        0, example=3, description="배차를 기다리는 사용자 수 (명, 없으면 0)"
+    )
+    priority_score: float = Field(
+        ..., example=0.74, description="0.3~1.0 범위의 긴급도 점수 (비율)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "calls": 12,
+                "active_cars": 5,
+                "waiting_users": 3,
+                "priority_score": 0.74
+            }
+        }
+
+
+class UsageV2Response(BaseModel):
+    endpoint: str = Field(
+        ..., example="/v2/usage", description="API 엔드포인트 경로"
+    )
+    total_requests: int = Field(
+        ..., example=1234, description="총 요청 수 (건)"
+    )
+    status: str = Field(
+        ..., example="ok", description="API 상태"
+    )
+    mock_realtime: MockRealtimeResponse = Field(
+        ..., description="실시간 mock 데이터 (수요/공급 상태)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "endpoint": "/v2/usage",
+                "total_requests": 1234,
+                "status": "ok",
+                "mock_realtime": {
+                    "calls": 12,
+                    "active_cars": 5,
+                    "waiting_users": 3,
+                    "priority_score": 0.74
+                }
+            }
+        }
