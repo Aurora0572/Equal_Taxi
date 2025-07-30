@@ -1,5 +1,5 @@
 # Base image
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code
 COPY services/ml-serving/serving ./serving
+# ✅ 추가: 모델 파일 복사
+COPY services/ml-serving/app/model ./app/model
 
 # Set environment variables
 ENV PYTHONPATH=/app
