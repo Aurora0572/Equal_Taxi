@@ -5,10 +5,10 @@ import re
 from fastapi import APIRouter
 from ..routers.mock import realtime_mock
 from ..schemas import UsageV2Response, MockRealtimeResponse
-from ..services.seoul_api import fetch_daily_usage_data
-from ..services.tmap_api import get_tmap_travel_time
-from ..services.ml_model import load_model_assets
-from ..services.gemini_service import ask_gemini_model
+from ..core.gemini_service import ask_gemini_model 
+from ..core.seoul_api   import fetch_daily_usage_data      # ✅ 수정
+from ..core.tmap_api    import get_tmap_travel_time   
+from ..core.ml_model import load_model_assets
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

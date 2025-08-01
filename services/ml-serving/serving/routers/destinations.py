@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, HTTPException
 from fastapi_cache.decorator import cache
-from ..services.seoul_api import fetch_best_100_destinations
-from ..services.tmap_api import get_tmap_travel_time
+from ..core.seoul_api import fetch_best_100_destinations          # ✅ 수정
+from ..core.tmap_api   import get_tmap_travel_time    
 from ..constants import DEFAULT_DATE
 import logging
 

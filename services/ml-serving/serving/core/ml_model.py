@@ -3,7 +3,7 @@ import joblib
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, Tuple
-from ..utils import model_dir
+from .utils import model_dir
 from .public_api import estimate_usage_stats
 
 # 모델 로드

@@ -1,5 +1,5 @@
 import httpx
-from ..utils import get_env
+from ..core.utils import get_env
 
 TMAP_KEY = get_env("TMAP_API_KEY")
 

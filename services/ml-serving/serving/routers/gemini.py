@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
 import google.generativeai as genai
-from serving.services.ml_model import load_model_assets, predict_waiting_time_from_request
-
+from ..core.gemini_service import ask_gemini_model         # ✅ 수정
+from ..core.ml_model      import load_model_assets, predict_waiting_time_from_request
+from ..core.seoul_api     import fetch_daily_usage_data
+from ..core.tmap_api      import get_tmap_travel_time
 router = APIRouter()
 
 # ML 모델 로드 (서버 시작 시 1회)

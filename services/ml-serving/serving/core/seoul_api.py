@@ -3,7 +3,7 @@ import pandas as pd
 import httpx
 from fastapi import HTTPException
 from ..constants import BASE_URL
-from ..utils import get_env
+from .utils import get_env
 import logging
 
 logger = logging.getLogger(__name__)
