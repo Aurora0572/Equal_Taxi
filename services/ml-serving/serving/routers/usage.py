@@ -15,7 +15,7 @@ router = APIRouter()
 
 model, le_loc, le_weather = load_model_assets()
 
-@router.get("/v2/usage", response_model=UsageV2Response)
+@router.get("/usage", response_model=UsageV2Response)
 async def get_usage():
     """
     /v2/usage
