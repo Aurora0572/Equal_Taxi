@@ -82,6 +82,8 @@ async def ai_chat(
 - 통합 ETA: {fused_eta}분
 
 위 정보를 참고해 친절하고 이해하기 쉬운 한국어 답변을 제공하세요.
+
+단, '*'표시나 '"'표시는 사용하지 마세요
 """
 
         answer = await ask_gemini_model(full_prompt)
