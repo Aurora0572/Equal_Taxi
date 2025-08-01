@@ -4,7 +4,7 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
 # 라우터 import (serving/routers/ 폴더에 있는 라우터들)
-from serving.routers import usage, gemini, mock, ai_chat
+from serving.routers import usage, mock, ai_chat
 
 # ---------------------------
 # FastAPI 앱 생성
@@ -40,7 +40,6 @@ async def startup():
 # ---------------------------
 # 실제 서울시 데이터 기반 API
 app.include_router(usage.router, prefix="/v2")        # 통계용 API
-app.include_router(gemini.router)                     # Gemini 기반 AI 채팅 API
 
 # 더미(Mock) 데이터용 API (동적 랜덤 생성)
 app.include_router(mock.router, prefix="/mock")
